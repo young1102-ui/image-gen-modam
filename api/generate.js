@@ -9,6 +9,21 @@ function getApiKey(){
  try{return fs.readFileSync('C:/api_key/gemini_api_key.txt','utf8').trim();}
  catch(error){return '';}
 }
+const wait=ms=>new Promise(resolve=>setTimeout(resolve,ms));
+async function askGemini(apiKey,prompt,ratio,model){
+ const controller=new AbortController();
+ const timer=setTimeout(()=>controller.abort(),45000);
+ try{
+  const response=await fetch('https://generativelanguage.googleapis.com/v1beta/interactions',{
+   method:'POST',signal:controller.signal,
+   headers:{'Content-Type':'application/json','x-goog-api-key':apiKey},
+   body:JSON.stringify({model,input:prompt,response_format:{type:'image',mime_type:'image/jpeg',aspect_ratio:ratio,image_size:'1K'}})
+  });
+  const text=await response.text();
+  let data={};try{data=text?JSON.parse(text):{}}catch(error){data={error:{message:'이미지 서버의 응답을 읽지 못했어요.'}}}
+  return {response,data};
+ }finally{clearTimeout(timer)}
+}
 module.exports=async(req,res)=>{
  if(req.method!=='POST')return res.status(405).json({error:'POST 요청만 사용할 수 있어요.'});
  const apiKey=getApiKey();
@@ -20,9 +35,20 @@ module.exports=async(req,res)=>{
  if(num(ips,ipKey)>=perIp)return res.status(429).json({error:'오늘 만들 수 있는 이미지를 모두 완성했어요.'});
  if(num(totals,date)>=globalLimit)return res.status(429).json({error:'오늘 수업의 전체 이미지 한도에 도달했어요.'});
  try{
-  const response=await fetch('https://generativelanguage.googleapis.com/v1beta/interactions',{method:'POST',headers:{'Content-Type':'application/json','x-goog-api-key':apiKey},body:JSON.stringify({model:'gemini-3.1-flash-lite-image',input:prompt,response_format:{type:'image',mime_type:'image/png',aspect_ratio:ratio,image_size:'1K'}})});
-  const data=await response.json();if(!response.ok)return res.status(response.status).json({error:data?.error?.message||'Gemini 이미지 생성 요청이 실패했어요.'});
+  let result=await askGemini(apiKey,prompt,ratio,'gemini-3.1-flash-lite-image');
+  if([429,500,502,503,504].includes(result.response.status)){
+   await wait(700);
+   result=await askGemini(apiKey,prompt,ratio,'gemini-3.1-flash-image');
+  }
+  const {response,data}=result;
+  if(!response.ok){
+   const temporary=[429,500,502,503,504].includes(response.status);
+   return res.status(temporary?503:response.status).json({error:temporary?'이미지 생성 서버가 잠시 혼잡해요. 1~2분 후 다시 눌러주세요.':data?.error?.message||'Gemini 이미지 생성 요청이 실패했어요.'});
+  }
   const output=data.output_image||data.interaction?.output_image;if(!output?.data)return res.status(502).json({error:'이미지 데이터가 도착하지 않았어요.'});
-  inc(ips,ipKey);inc(totals,date);return res.status(200).json({image:output.data,mimeType:output.mime_type||output.mimeType||'image/png'});
- }catch(error){return res.status(500).json({error:'이미지 서버에 연결하지 못했어요. 잠시 후 다시 시도해주세요.'})}
+  inc(ips,ipKey);inc(totals,date);return res.status(200).json({image:output.data,mimeType:output.mime_type||output.mimeType||'image/jpeg'});
+ }catch(error){
+  const timedOut=error?.name==='AbortError';
+  return res.status(503).json({error:timedOut?'이미지를 그리는 시간이 길어졌어요. 1~2분 후 다시 눌러주세요.':'이미지 서버에 연결하지 못했어요. 잠시 후 다시 시도해주세요.'})
+ }
 };
