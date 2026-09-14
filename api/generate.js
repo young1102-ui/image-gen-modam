@@ -12,7 +12,7 @@ function getApiKey(){
 const wait=ms=>new Promise(resolve=>setTimeout(resolve,ms));
 async function askGemini(apiKey,prompt,ratio,model){
  const controller=new AbortController();
- const timer=setTimeout(()=>controller.abort(),45000);
+ const timer=setTimeout(()=>controller.abort(),120000);
  try{
   const response=await fetch('https://generativelanguage.googleapis.com/v1beta/interactions',{
    method:'POST',signal:controller.signal,
