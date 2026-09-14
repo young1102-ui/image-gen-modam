@@ -24,6 +24,19 @@ async function askGemini(apiKey,prompt,ratio,model){
   return {response,data};
  }finally{clearTimeout(timer)}
 }
+function getGeneratedImage(data){
+ const root=data?.interaction||data;
+ if(root?.output_image?.data)return root.output_image;
+ const steps=Array.isArray(root?.steps)?root.steps:[];
+ for(let i=steps.length-1;i>=0;i--){
+  const content=Array.isArray(steps[i]?.content)?steps[i].content:[];
+  for(let j=content.length-1;j>=0;j--){
+   const part=content[j];
+   if(part?.type==='image'&&part?.data)return part;
+  }
+ }
+ return null;
+}
 module.exports=async(req,res)=>{
  if(req.method!=='POST')return res.status(405).json({error:'POST 요청만 사용할 수 있어요.'});
  const apiKey=getApiKey();
@@ -45,7 +58,7 @@ module.exports=async(req,res)=>{
    const temporary=[429,500,502,503,504].includes(response.status);
    return res.status(temporary?503:response.status).json({error:temporary?'이미지 생성 서버가 잠시 혼잡해요. 1~2분 후 다시 눌러주세요.':data?.error?.message||'Gemini 이미지 생성 요청이 실패했어요.'});
   }
-  const output=data.output_image||data.interaction?.output_image;if(!output?.data)return res.status(502).json({error:'이미지 데이터가 도착하지 않았어요.'});
+  const output=getGeneratedImage(data);if(!output?.data)return res.status(502).json({error:'Google이 이번 요청에서 이미지를 만들지 못했어요. 문장을 조금 바꿔 다시 눌러주세요.'});
   inc(ips,ipKey);inc(totals,date);return res.status(200).json({image:output.data,mimeType:output.mime_type||output.mimeType||'image/jpeg'});
  }catch(error){
   const timedOut=error?.name==='AbortError';
