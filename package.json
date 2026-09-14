@@ -1,0 +1,1 @@
+{"name":"modam-ai-image-studio","version":"1.0.0","private":true,"scripts":{"dev":"vercel dev"},"devDependencies":{"vercel":"^48.0.0"}}
